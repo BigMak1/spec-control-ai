@@ -29,11 +29,13 @@ Trace: process_document (session_id)
 │   └── Event: text_extracted (pages, chars)
 ├── Span: anonymize_pii
 │   └── Event: pii_detected (count per type)
-├── Span: extract_parameters
-│   ├── Generation: LLM call #1 (prompt, response, tokens, cost)
-│   ├── Event: tool_call (extract_from_chunk)
-│   ├── Generation: LLM call #2
-│   └── Event: parameters_extracted (count)
+├── Span: extract_parameters (workflow)
+│   ├── Span: section_1
+│   │   └── Generation: LLM call (prompt, response, tokens, cost)
+│   ├── Span: section_2
+│   │   └── Generation: LLM call (prompt, response, tokens, cost)
+│   ├── ...
+│   └── Event: parameters_extracted (count, sections_processed, sections_skipped)
 ├── Span: check_norms
 │   └── Span: check_parameter (per param)
 │       ├── Event: search_norms (query, top_k scores)

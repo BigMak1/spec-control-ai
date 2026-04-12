@@ -65,13 +65,13 @@ class SessionState:
 
 Документ до 50 страниц может содержать ~25-50K tokens. Context window Claude Sonnet (200K) вмещает это, но каждый вызов стоит денег. Нужна стратегия управления контекстом.
 
-### Стратегия для Parameter Extractor
+### Стратегия для Parameter Extractor (workflow)
 
-1. Документ разбивается на секции (в Document Parser)
-2. Агент получает список секций через `list_sections()` — видит заголовки и размеры, но не полный текст
-3. Агент запрашивает конкретные секции через `get_chunk(section_id)` — получает текст порциями
-4. Каждый вызов LLM получает: system prompt (~500 tokens) + текст секции (~1-3K tokens) + предыдущие извлечённые параметры (~500 tokens)
-5. Итого на вызов: ~2-4K tokens input
+1. Документ разбит на секции в Document Parser (секции уже в `session.sections`)
+2. Детерминированный цикл по секциям — каждая секция обрабатывается отдельным LLM-вызовом
+3. Каждый вызов LLM получает: system prompt (~500 tokens) + текст секции (~1-3K tokens)
+4. Итого на вызов: ~2-4K tokens input
+5. Контекст между вызовами не накапливается (каждый вызов независим) — это дешевле агентного цикла, где conversation history растёт с каждым шагом
 
 ### Стратегия для Normative Checker
 
@@ -87,10 +87,11 @@ class SessionState:
 if session.cost_usd >= 1.0:
     raise CircuitBreakerError("Budget exceeded")
 if session.agent_steps >= 15:
-    raise MaxStepsError("Max agent steps reached")
+    raise MaxStepsError("Max agent steps reached")  # только Normative Checker
 
 # После каждого LLM вызова:
 session.token_usage += response.usage.total_tokens
 session.cost_usd += calculate_cost(response.usage, model="anthropic/claude-sonnet")
-session.agent_steps += 1
+session.llm_calls += 1
+# agent_steps инкрементируется только в Normative Checker (агентный цикл)
 ```

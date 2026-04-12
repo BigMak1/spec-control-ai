@@ -8,9 +8,9 @@
 
 ### Гибридная архитектура: детерминированный pipeline + Agentic RAG
 
-Система построена как последовательный pipeline из 6 шагов. Шаги с предсказуемой, формализуемой логикой (парсинг, анонимизация, деанонимизация) выполняются детерминированно — без LLM. Шаги, требующие адаптивных решений (извлечение параметров из разнородных документов, нормативный поиск и сопоставление), реализованы как автономные агентные циклы с tool-use.
+Система построена как последовательный pipeline из 6 шагов. Большинство шагов — детерминированные (парсинг, анонимизация, деанонимизация) или детерминированные с LLM-вызовами внутри (извлечение параметров, генерация отчёта). Единственный настоящий агент — **Normative Checker**, который автономно формулирует поисковые запросы, оценивает релевантность результатов и принимает решение о переформулировке.
 
-**Принцип:** агенту предоставляется автономность только там, где нельзя описать понятный последовательный алгоритм. Это снижает общую сложность системы, стоимость обработки и риск зацикливания.
+**Принцип:** агент (LLM в цикле, автономно выбирающий инструменты) используется только там, где нельзя описать детерминированный алгоритм. Извлечение параметров — предсказуемый цикл по секциям документа с LLM-вызовом на каждом шаге, поэтому реализовано как workflow, а не агент. Это снижает стоимость, сложность и риск зацикливания.
 
 ### Таблица ключевых решений
 
@@ -61,23 +61,23 @@
 
 Замены: ФИО → `[PERSON]`, адреса → `[ADDR]`, телефоны → `[TEL]`, email → `[EMAIL]`, ИНН → `[INN]`. Анонимизация обязательна: в LLM API отправляется только обезличенный текст.
 
-### 2.3. Parameter Extractor (агент с tool-use)
+### 2.3. Parameter Extractor (детерминированный workflow + LLM)
 
 | Поле | Значение |
 |------|----------|
 | Вход | `anonymized_text: str`, `sections: List[Section]` |
 | Выход | `parameters: List[Parameter]` (JSON, schema-validated) |
-| Тип | Агентный цикл, Claude Sonnet via OpenRouter |
-| Технология | OpenAI Python SDK (tool-use loop) |
-| Ограничения | Max 10 итераций, max 50K токенов, retry при невалидном JSON — до 2 раз |
+| Тип | Детерминированный цикл по секциям с LLM-вызовом на каждом шаге |
+| Технология | OpenAI Python SDK (structured output, без tool-use loop) |
+| Ограничения | Max 50K токенов суммарно, retry при невалидном JSON — до 2 раз на секцию |
 
-Агент работает с документом через инструменты, а не получает весь текст сразу — это снижает расход токенов для больших документов.
+**Почему не агент:** для документа ≤50 страниц алгоритм обхода секций полностью предсказуем — перебрать все секции последовательно и извлечь параметры из каждой. LLM не нужно принимать решение «какую секцию читать следующей» — это решение тривиально и запрограммировано в коде. LLM используется только для семантического извлечения параметров из текста (structured output), что является одиночным вызовом, а не агентным циклом.
 
-**Инструменты агента:**
-- `list_sections()` — получить список секций документа
-- `get_chunk(section_id)` — получить текст конкретной секции
-- `extract_from_chunk(chunk, focus)` — извлечь параметры из чанка с указанием фокуса
-- `validate_parameters()` — провалидировать все накопленные параметры по JSON-схеме
+**Алгоритм:**
+1. Получить список секций из Document Parser
+2. Для каждой секции: отправить текст секции в LLM → получить `List[Parameter]` (structured output)
+3. Объединить результаты, провалидировать по JSON-схеме
+4. При невалидном JSON — retry до 2 раз с уточнённым промптом
 
 ### 2.4. Normative Checker (Agentic RAG)
 
@@ -139,11 +139,11 @@ Upload (PDF/DOCX)
   │
   ├── FAIL: NER сервис недоступен → STOP (не отправлять неанонимизированный текст в API)
   ▼
-[3] Parameter Extractor ───────── AGENT (tool-use loop, max 10 iter)
-  │   anonymized_text → List[Parameter]
+[3] Parameter Extractor ───────── WORKFLOW + LLM (loop over sections)
+  │   anonymized_text + sections → List[Parameter]
   │
-  ├── FAIL: max iterations reached → partial result, продолжить с имеющимися параметрами
-  ├── FAIL: invalid JSON после 2 retry → STOP
+  ├── FAIL: LLM вернул невалидный JSON для секции → retry 2x → пропустить секцию
+  ├── FAIL: API недоступен → retry 3x exp.backoff → STOP
   ▼
 [4] Normative Checker ─────────── AGENTIC RAG (per parameter, max 3 iter each)
   │   List[Parameter] → List[CheckResult]
@@ -202,22 +202,22 @@ class SessionState:
 
 ### Управление контекстом в агентах (Context Budget Policy)
 
-Агенты работают с большими документами через инструменты, не загружая весь текст в контекст сразу. Алгоритм:
+LLM-вызовы не получают весь документ сразу — текст подаётся по секциям.
 
-1. Агент вызывает `list_sections()` — получает структуру документа (~1K токенов)
-2. Агент вызывает `get_chunk(section_id)` — получает текст только нужных секций
-3. Перед каждым LLM-вызовом проверяется бюджет:
+**Parameter Extractor (workflow):** детерминированный цикл по секциям. Каждый LLM-вызов получает текст одной секции (~1-3K токенов). Бюджет проверяется перед каждым вызовом.
+
+**Normative Checker (агент):** агентный цикл с tool-use. Агент сам выбирает инструменты и стратегию поиска. Бюджет проверяется перед каждым шагом агента.
 
 ```python
 def check_budget(state: SessionState) -> bool:
     if state.cost_usd >= 1.0:          # Circuit breaker: $1 на запрос
         raise BudgetExceededException()
-    if state.agent_steps >= 15:        # Circuit breaker: 15 шагов
+    if state.agent_steps >= 15:        # Circuit breaker: 15 шагов (только Normative Checker)
         raise StepLimitExceededException()
     return True
 ```
 
-Оба circuit breaker проверяются перед каждым LLM-вызовом в агентном цикле.
+Circuit breaker по шагам (`agent_steps`) считает только шаги агента Normative Checker, т.к. Parameter Extractor — детерминированный workflow и не может зациклиться.
 
 ---
 
@@ -292,16 +292,17 @@ response = client.chat.completions.create(
 )
 ```
 
-### Инструменты Parameter Extractor
+### Parameter Extractor — внутренние функции (не agent tools)
 
-| Tool | Сигнатура | Описание |
-|------|-----------|----------|
-| `list_sections` | `() → List[{id, title, page}]` | Список всех секций документа |
-| `get_chunk` | `(section_id: str) → str` | Текст указанной секции |
-| `extract_from_chunk` | `(chunk: str, focus: str) → List[Parameter]` | Извлечение параметров из чанка |
-| `validate_parameters` | `() → ValidationResult` | Валидация всех накопленных параметров по JSON-схеме |
+Parameter Extractor реализован как детерминированный workflow. Перечисленные функции вызываются кодом pipeline, а не LLM через tool-use:
 
-### Инструменты Normative Checker
+| Функция | Сигнатура | Описание |
+|---------|-----------|----------|
+| `get_sections` | `(session) → List[Section]` | Получить секции из Document Parser (уже готовы в SessionState) |
+| `extract_parameters_from_section` | `(section_text: str) → List[Parameter]` | LLM-вызов: structured output извлечения параметров из текста секции |
+| `validate_parameters` | `(params: List[Parameter]) → ValidationResult` | JSON Schema валидация итогового списка параметров |
+
+### Инструменты Normative Checker (agent tools)
 
 | Tool | Сигнатура | Описание |
 |------|-----------|----------|
@@ -369,7 +370,7 @@ tools = [
 |---------|--------------|-------------------|----------|------------------------|
 | PDF без текстового слоя | Document Parser | `len(text) < threshold` | Остановка pipeline | «Документ не содержит текстового слоя. Загрузите текстовый PDF.» |
 | LLM вернул невалидный JSON | Parameter Extractor / Normative Checker | JSON Schema validation | Retry до 2 раз с уточнённым промптом | После 2 retry — ошибка с кодом |
-| Агент превысил лимит итераций | Parameter Extractor / Normative Checker | `iterations > max` (10 / 3) | Принудительный stop, partial result | «Часть параметров не проверена (агент достиг лимита шагов)» |
+| Агент превысил лимит итераций | Normative Checker | `iterations > max` (3 на параметр) | Принудительный stop, `status = MANUAL` | «Норматив не найден — требуется ручная проверка» |
 | Норматив не найден в базе | Normative Checker (RAG) | `search_score < threshold` после 3 попыток | `status = MANUAL` для параметра | «Норматив не найден — требуется ручная проверка» |
 | Галлюцинация (несуществующий `chunk_id`) | Normative Checker | Проверка `chunk_id` в metadata | Отклонить вердикт, retry поиска | Пользователь не видит невалидных ссылок на нормативы |
 | LLM API недоступен | Любой LLM-шаг | HTTP 5xx / timeout | Retry 3x с exp. backoff (2/4/8 с) | «Сервис временно недоступен. Попробуйте позже.» |
@@ -380,9 +381,8 @@ tools = [
 
 | Scope | Параметр | Значение |
 |-------|----------|----------|
-| Parameter Extractor | Max iterations | 10 |
-| Parameter Extractor | Max tokens per agent call | 50K |
-| Parameter Extractor | Retry on invalid JSON output | 2× |
+| Parameter Extractor | Max tokens (суммарно по всем секциям) | 50K |
+| Parameter Extractor | Retry on invalid JSON per section | 2× |
 | Normative Checker | Max search iterations per parameter | 3 |
 | Normative Checker | Confidence threshold (MANUAL) | 0.7 |
 | Normative Checker | Max cost per parameter | $0.05 |

@@ -118,10 +118,11 @@
 ┌───▼───┐ ┌───▼────────┐ ┌───▼───────┐ ┌────▼──────────┐
 │Parser │ │ Parameter  │ │ Normative │ │    Report     │
 │Module │ │ Extractor  │ │ Checker   │ │   Generator   │
-│       │ │   (LLM)    │ │  (LLM +   │ │    (LLM)      │
-│PDF/   │ │            │ │   RAG)    │ │               │
-│DOCX → │ │ Текст →    │ │ Параметры │ │ Несоответствия│
-│текст  │ │ параметры  │ │ vs нормы  │ │ → отчёт       │
+│       │ │ (workflow  │ │  (LLM     │ │    (LLM)      │
+│PDF/   │ │  + LLM)   │ │  agent +  │ │               │
+│DOCX → │ │ Текст →    │ │   RAG)    │ │ Несоответствия│
+│текст  │ │ параметры  │ │ Параметры │ │ → отчёт       │
+│       │ │            │ │ vs нормы  │ │               │
 └───────┘ └────────────┘ └─────┬─────┘ └───────────────┘
                                │
                     ┌──────────▼──────────┐
@@ -140,7 +141,7 @@
 | Document Parser | PyMuPDF + python-docx | Извлечение текста из PDF/DOCX |
 | Embedding Model | OpenAI text-embedding | Векторизация нормативов и запросов |
 | Web UI | Streamlit/Node.js | Интерфейс пользователя |
-| Agent Framework | Antropic SDK/ LangGraph / CrewAI | Оркестрация агентного пайплайна |
+| Agent Loop | Собственный agent loop на OpenAI Python SDK | Tool-use цикл для Normative Checker (единственный агент) |
 | State Storage | SQLite / In-memory | Хранение промежуточного состояния проверки |
 
 ## 6. Data Flow
@@ -160,19 +161,18 @@
      │                   ┌──────────▼──────────┐
      │                   │  Parameter Extractor │
      │                   │  Текст → JSON        │
-     │                   │  [LLM — structured   │
-     │                   │   output]             │
+     │                   │  [WORKFLOW + LLM:    │
+     │                   │   цикл по секциям,   │
+     │                   │   structured output]  │
      │                   └──────────┬──────────┘
      │                              │
      │                   ┌──────────▼──────────┐
      │                   │  Normative Checker   │
      │                   │  Для каждого парам.: │
-     │                   │  1. RAG-поиск нормы  │
-     │                   │     [НЕ LLM]         │
-     │                   │  2. Сравнение с      │
-     │                   │     требованием       │
-     │                   │     [LLM — agent]     │
-     │                   │  3. Вердикт          │
+     │                   │  [LLM AGENT с tools: │
+     │                   │   search → evaluate  │
+     │                   │   → reformulate →    │
+     │                   │   verdict]            │
      │                   └──────────┬──────────┘
      │                              │
      │                   ┌──────────▼──────────┐
@@ -190,11 +190,11 @@
 | Этап | LLM/Agent | Детерминированный код |
 |------|-----------|----------------------|
 | Парсинг документа | — | PyMuPDF, python-docx |
-| Извлечение параметров | LLM (structured output) | Валидация JSON-схемы |
+| Извлечение параметров | LLM (structured output, single call per section) | Детерминированный цикл по секциям + валидация JSON-схемы |
 | Embedding нормативов | Embedding model | — |
-| Поиск релевантных норм | — | Vector similarity search |
-| Сопоставление параметра с нормой | LLM (agent с reasoning) | — |
-| Принятие решения о соответствии | LLM (agent) | Пороговая логика для числовых значений |
-| Генерация отчёта | LLM (generation) | Шаблон отчёта |
+| Поиск релевантных норм | — | Vector similarity search (FAISS) |
+| Сопоставление параметра с нормой | **LLM agent** (tool-use loop: поиск → оценка → переформулировка) | Верификация chunk_id |
+| Принятие решения о соответствии | **LLM agent** (вердикт на основе найденного норматива) | Пороговая логика для confidence |
+| Генерация отчёта | LLM (single call, generation) | Шаблон отчёта |
 | Загрузка/сохранение файлов | — | Детерминированный код |
-| Управление пайплайном | Agent (orchestrator) | Fallback и retry-логика |
+| Управление пайплайном | — | Детерминированный orchestrator (fallback и retry-логика) |

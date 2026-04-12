@@ -43,51 +43,50 @@ async def process_document(file: UploadFile) -> Report:
 | checking | reporting | CheckResults получены (full или partial) | partial → продолжаем с warning |
 | reporting | done | Отчёт сгенерирован | Retry 2x → STOP |
 
-## Agent Loop: Parameter Extractor
+## Parameter Extractor (детерминированный workflow + LLM)
 
-### Реализация agent loop
+**Почему не агент:** алгоритм обхода секций документа полностью предсказуем — перебрать все секции и извлечь параметры из каждой. LLM не нужно решать, какую секцию читать следующей. Агентный цикл здесь добавил бы расход токенов на «размышления» LLM, риск зацикливания и сложность отладки без какой-либо выгоды.
+
+### Реализация (deterministic loop)
 
 ```python
 async def extract_parameters(session: SessionState) -> list[Parameter]:
-    messages = [{"role": "system", "content": EXTRACTOR_SYSTEM_PROMPT}]
-    tools = [extract_from_chunk, list_sections, get_chunk, validate_parameters]
     all_parameters = []
 
-    for iteration in range(MAX_ITERATIONS):  # MAX_ITERATIONS = 10
+    for section in session.sections:
         check_budget(session)  # raises CircuitBreakerError
 
-        response = await client.chat.completions.create(
-            model="anthropic/claude-sonnet",
-            messages=messages,
-            tools=tool_schemas(tools),
-            temperature=0.0,
-        )
-        session.agent_steps += 1
-        track_usage(session, response)
+        # Один LLM-вызов на секцию (structured output, без tool-use)
+        for attempt in range(MAX_JSON_RETRIES + 1):  # MAX_JSON_RETRIES = 2
+            response = await client.chat.completions.create(
+                model="anthropic/claude-sonnet",
+                messages=[
+                    {"role": "system", "content": EXTRACTOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": format_section_for_extraction(section)},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+            )
+            track_usage(session, response)
 
-        if response.choices[0].finish_reason == "stop":
-            break  # Агент решил, что закончил
+            params = try_parse_parameters(response.choices[0].message.content)
+            if params is not None:
+                all_parameters.extend(params)
+                break
+            # Retry с уточнённым промптом при невалидном JSON
 
-        # Process tool calls
-        for tool_call in response.choices[0].message.tool_calls:
-            result = execute_tool(tool_call, session)
-            messages.append(tool_call_result(tool_call, result))
-
-        messages.append(response.choices[0].message)
-
-    # Validate output
-    return validate_and_parse_parameters(messages[-1].content)
+    # Финальная валидация всех параметров
+    return validate_parameters(all_parameters)
 ```
 
 ### Stop conditions
 
 | Условие | Действие |
 | ------- | -------- |
-| Агент вернул `finish_reason == "stop"` | Нормальное завершение |
-| `iteration >= 10` | Принудительный stop, partial result |
-| `session.cost_usd >= $1` | Circuit breaker |
-| `session.agent_steps >= 15` | Circuit breaker |
-| JSON validation failed 2x подряд | STOP с ошибкой |
+| Все секции обработаны | Нормальное завершение |
+| JSON validation failed 2x для секции | Пропустить секцию, warning в логи |
+| `session.cost_usd >= $1` | Circuit breaker, partial result |
+| API недоступен после 3 retry | STOP с ошибкой |
 
 ## Agent Loop: Normative Checker
 

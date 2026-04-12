@@ -32,81 +32,25 @@ client = OpenAI(
 | HTTP 5xx | Retry |
 | HTTP 4xx (кроме 429) | Не retry, ошибка |
 
-## Tools: Parameter Extractor
+## Parameter Extractor — внутренние функции pipeline
 
-### extract_from_chunk
+Parameter Extractor — детерминированный workflow, не агент. Перечисленные функции вызываются кодом pipeline, а не LLM через tool-use. LLM используется только для structured output (извлечение параметров из текста секции).
 
-```json
-{
-  "name": "extract_from_chunk",
-  "description": "Извлечь технические параметры из указанного фрагмента документа",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "chunk": {"type": "string", "description": "Текст фрагмента документа"},
-      "focus": {"type": "string", "enum": ["tables", "prose", "all"], "description": "Фокус извлечения"}
-    },
-    "required": ["chunk"]
-  }
-}
-```
+### extract_parameters_from_section (LLM-вызов)
 
-- **Side effects:** нет
-- **Timeout:** нет (локальная функция, возвращает результат вызова LLM)
-- **Ошибки:** невалидный chunk → пустой результат
+- **Вход:** текст секции документа (из `session.sections`)
+- **Выход:** `List[Parameter]` (JSON, structured output)
+- **LLM:** single call, `response_format={"type": "json_object"}`, temperature=0.0
+- **Retry:** до 2 раз при невалидном JSON
+- **Ошибки:** невалидный JSON после 2 retry → пропуск секции с warning
 
-### list_sections
+### validate_parameters (детерминированная)
 
-```json
-{
-  "name": "list_sections",
-  "description": "Получить список секций документа с их идентификаторами",
-  "parameters": {"type": "object", "properties": {}}
-}
-```
+- **Вход:** `List[Parameter]` (все извлечённые параметры)
+- **Выход:** `ValidationResult` — `{"valid": true/false, "issues": ["..."]}`
+- **Реализация:** JSON Schema validation, без LLM
 
-- **Side effects:** нет
-- **Возврат:** `[{"section_id": "s1", "title": "...", "page_start": 1, "char_count": 500}]`
-
-### get_chunk
-
-```json
-{
-  "name": "get_chunk",
-  "description": "Получить текст конкретной секции документа",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "section_id": {"type": "string"}
-    },
-    "required": ["section_id"]
-  }
-}
-```
-
-- **Side effects:** нет
-- **Ошибки:** неизвестный section_id → error message
-
-### validate_parameters
-
-```json
-{
-  "name": "validate_parameters",
-  "description": "Проверить список извлечённых параметров на полноту и корректность формата",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "parameters": {"type": "array", "items": {"$ref": "#/Parameter"}}
-    },
-    "required": ["parameters"]
-  }
-}
-```
-
-- **Side effects:** нет
-- **Возврат:** `{"valid": true/false, "issues": ["..."]}`
-
-## Tools: Normative Checker
+## Tools: Normative Checker (agent tools)
 
 ### search_norms
 

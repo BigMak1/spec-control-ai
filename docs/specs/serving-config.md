@@ -106,7 +106,7 @@ spec-control-ai/
 │   │   ├── pipeline.py          # Orchestrator
 │   │   ├── parser.py            # Document Parser
 │   │   ├── anonymizer.py        # PII Anonymizer
-│   │   ├── extractor.py         # Parameter Extractor (agent)
+│   │   ├── extractor.py         # Parameter Extractor (workflow + LLM)
 │   │   ├── checker.py           # Normative Checker (agent)
 │   │   ├── reporter.py          # Report Generator
 │   │   ├── deanonymizer.py      # De-anonymizer
