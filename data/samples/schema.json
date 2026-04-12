@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpecControl AI — ground_truth.json schema",
+  "description": "Schema for ground truth annotations of technical specification samples used in Phase 0 eval dataset",
+  "type": "object",
+  "required": [
+    "doc_id",
+    "source_type",
+    "description",
+    "expected_parameters",
+    "expected_violations",
+    "expected_normatives"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "doc_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "Stable identifier matching the sample directory name"
+    },
+    "source_url": {
+      "type": "string",
+      "description": "Public URL where the document was downloaded (empty for synthetic)"
+    },
+    "source_type": {
+      "enum": ["real", "synthetic", "hybrid"],
+      "description": "real = found as-is; synthetic = errors injected; hybrid = real doc + added errors"
+    },
+    "description": {
+      "type": "string",
+      "description": "Short human-readable description of the document"
+    },
+    "pages_total": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expected_parameters": {
+      "type": "array",
+      "description": "All parameters in the document that fall within the Phase 0 taxonomy",
+      "items": {
+        "type": "object",
+        "required": ["name", "value", "unit", "source_page", "source_text_hint"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "value": {"type": "string"},
+          "unit": {"type": "string"},
+          "context": {"type": "string"},
+          "source_page": {"type": "integer", "minimum": 1},
+          "source_text_hint": {"type": "string"}
+        }
+      }
+    },
+    "expected_violations": {
+      "type": "array",
+      "description": "Confirmed norm violations. Empty array is valid (clean document — used for false-positive sanity check)",
+      "items": {
+        "type": "object",
+        "required": [
+          "parameter_name",
+          "actual",
+          "required",
+          "norm_doc",
+          "norm_section"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "parameter_name": {"type": "string"},
+          "actual": {"type": "string"},
+          "required": {"type": "string"},
+          "norm_doc": {"type": "string"},
+          "norm_section": {"type": "string"},
+          "severity": {"enum": ["critical", "major", "minor"]},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "expected_normatives": {
+      "type": "array",
+      "description": "Normative documents referenced by any expected_violation. Union across all ground_truth files defines data/norms/ content.",
+      "items": {"type": "string"}
+    }
+  }
+}

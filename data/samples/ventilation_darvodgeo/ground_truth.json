@@ -1,0 +1,59 @@
+{
+  "doc_id": "ventilation_darvodgeo",
+  "source_url": "https://tgl.ru/files/tinymce/razdel-pd-5-podrazdel-pd-4_21-137-m-ios4-otoplenie-ventilyaciya-i-kondicionirovanie-vozduha-teplovye-seti_file_1686806848.pdf",
+  "source_type": "real",
+  "description": "Раздел ИОС4 (отопление, вентиляция и кондиционирование) очистных сооружений г. Тольятти, проект АО «ДАР/ВОДГЕО», шифр 21/137-М-ИОС4. Чистый документ без инжекции ошибок — используется для проверки false-positive rate pipeline.",
+  "pages_total": 50,
+  "expected_parameters": [
+    {
+      "name": "Расход воздуха приточно-вытяжной установки ПВ1-1",
+      "value": "9000",
+      "unit": "м³/ч",
+      "context": "приточно-вытяжная установка AIRNED-M6 для здания сливной станции",
+      "source_page": 26,
+      "source_text_hint": "Расход воздуха (м3/ч) 9000 / 9000"
+    },
+    {
+      "name": "Номинальная мощность двигателя вентилятора ПВ1-1",
+      "value": "4",
+      "unit": "кВт",
+      "context": "двигатель АИР100S2 вентилятора V1.0.P40.R-4x30",
+      "source_page": 30,
+      "source_text_hint": "Номинальная мощность (Ny, кВт) 4"
+    },
+    {
+      "name": "Потребляемая электрическая мощность вентилятора ПВ1-1",
+      "value": "3.93",
+      "unit": "кВт",
+      "context": "двигатель АИР100S2 вентилятора V1.0.P40.R-4x30",
+      "source_page": 30,
+      "source_text_hint": "Потребляемая электрическая мощность (Nп, кВт) 3.93"
+    },
+    {
+      "name": "Ток двигателя вентилятора ПВ1-1",
+      "value": "7.8",
+      "unit": "А",
+      "context": "двигатель АИР100S2 вентилятора V1.0.P40.R-4x30",
+      "source_page": 30,
+      "source_text_hint": "Ток (А) 7.8"
+    },
+    {
+      "name": "Степень защиты оболочки двигателя вентилятора",
+      "value": "IP54",
+      "unit": "",
+      "context": "двигатель АИР100S2 вентилятора V1.0.P40.R-4x30",
+      "source_page": 30,
+      "source_text_hint": "Степень защиты оболочки IP54"
+    },
+    {
+      "name": "Класс очистки фильтра ступени 1",
+      "value": "EU4",
+      "unit": "",
+      "context": "фильтр вставка в приточной части установки ПВ1-1",
+      "source_page": 30,
+      "source_text_hint": "Класс очистки EU4"
+    }
+  ],
+  "expected_violations": [],
+  "expected_normatives": []
+}

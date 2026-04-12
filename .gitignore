@@ -1,0 +1,37 @@
+# AI working artifacts (tasks, plans, notes for Claude Code)
+.ai/
+
+# # Claude Code
+.claude/
+CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temp files
+tmp/
+
+# Generated FAISS index and metadata
+data/faiss/
+
+# Superpowers brainstorm artifacts
+.superpowers/
+docs/superpowers
+
+# .gitignore
