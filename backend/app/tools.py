@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 
+_TEXT_PREVIEW_MAX = 300
+
 TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
@@ -176,7 +178,7 @@ def compare_values(actual: str, required: str, comparison_type: str) -> dict:
     if comparison_type == "contains":
         # Use word-boundary-aware check: required must not be preceded by an alphanumeric char.
         # This prevents "ВВГнг" matching inside "АВВГнг".
-        pattern = r"(?<![A-Za-zА-Яа-яЁёA-Za-z0-9])" + re.escape(required)
+        pattern = r"(?<![A-Za-zА-Яа-яЁё0-9])" + re.escape(required)
         match = bool(re.search(pattern, actual))
         return {
             "match": match,
@@ -231,20 +233,22 @@ def execute_search_norms(retriever, args: dict) -> str:
     query = args["query"]
     top_k = args.get("top_k", 5)
     filter_doc = args.get("filter_doc")
-
     results = retriever.search_norms(query, top_k=top_k, filter_doc=filter_doc)
-
-    # Truncate chunk text to 300 chars to save tokens
-    truncated = []
-    for item in results:
-        entry = dict(item)
-        if "metadata" in entry and "text" in entry["metadata"]:
-            meta = dict(entry["metadata"])
-            meta["text"] = meta["text"][:300]
-            entry["metadata"] = meta
-        truncated.append(entry)
-
-    return json.dumps(truncated, ensure_ascii=False)
+    formatted = []
+    for r in results:
+        meta = r["metadata"]
+        text_preview = meta.get("text", "")[:_TEXT_PREVIEW_MAX]
+        formatted.append(
+            {
+                "chunk_id": meta["chunk_id"],
+                "norm_doc": meta["norm_doc"],
+                "section": meta["section"],
+                "title": meta.get("title", ""),
+                "score": round(r["score"], 3),
+                "text_preview": text_preview,
+            }
+        )
+    return json.dumps(formatted, ensure_ascii=False)
 
 
 def execute_get_norm_chunk(retriever, args: dict) -> str:

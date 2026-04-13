@@ -45,3 +45,8 @@ class TestCompareValues:
         result = compare_values("2.5 мм²", "2.5", "gte")
         assert result["match"] is True
         assert result["actual_parsed"] == 2.5
+
+    def test_comma_decimal_separator(self):
+        result = compare_values("2,5 мм²", "2.5", "gte")
+        assert result["match"] is True
+        assert result["actual_parsed"] == 2.5
