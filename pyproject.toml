@@ -32,3 +32,6 @@ select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "eval: evaluation tests requiring --run-eval flag and OPENROUTER_API_KEY",
+]
