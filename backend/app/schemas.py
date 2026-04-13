@@ -60,3 +60,7 @@ class ChunkMetadata(BaseModel):
 class ChunkResult(BaseModel):
     metadata: ChunkMetadata
     score: float
+
+
+class BudgetExceededError(Exception):
+    """Превышен лимит стоимости LLM-вызовов."""
