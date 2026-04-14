@@ -19,6 +19,16 @@ from backend.app.tools import (
 
 logger = logging.getLogger(__name__)
 
+_SUBMIT_VERDICT_REQUIRED_FIELDS = (
+    "parameter_name",
+    "status",
+    "norm_reference",
+    "norm_requirement",
+    "source_chunk_id",
+    "confidence",
+    "explanation",
+)
+
 
 def _match_parameter(
     name: str,
@@ -60,6 +70,16 @@ def _handle_submit_verdict(
 
     Returns a (json_response, optional CheckResult) tuple.
     """
+    missing = [f for f in _SUBMIT_VERDICT_REQUIRED_FIELDS if f not in args]
+    if missing:
+        return (
+            json.dumps(
+                {"error": f"missing required fields: {', '.join(missing)}"},
+                ensure_ascii=False,
+            ),
+            None,
+        )
+
     chunk_id = args.get("source_chunk_id", "")
     chunk = retriever.get_norm_chunk(chunk_id)
     if chunk is None:
@@ -157,6 +177,12 @@ def check_norms(
 
     Iterates through parameters, calling LLM with tools to search norms,
     compare values, and submit verdicts. Enforces step and budget limits.
+
+    Budget is checked at the start of each step (before llm.chat). Because a
+    step can only be interrupted between LLM calls — not mid-request — the
+    final ``session.cost_usd`` may overshoot ``circuit_breaker_usd`` by up to
+    one step's cost. This is an intentional trade-off: cheaper and simpler
+    than mid-request cancellation, bounded by per-step token limits.
     """
     if not session.parameters:
         return []

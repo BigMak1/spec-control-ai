@@ -35,7 +35,7 @@ check_norms(session, llm, retriever)
 ### Лимиты
 
 - `max_steps = min(3 * len(parameters), settings.max_agent_steps)` — динамический с потолком 15
-- `circuit_breaker_usd` — проверка бюджета перед каждым шагом
+- `circuit_breaker_usd` — проверка бюджета **перед** каждым шагом (до `llm.chat`). Шаг не прерывается в середине запроса, поэтому `session.cost_usd` может превысить лимит на стоимость одного шага — это осознанный trade-off (дешевле и проще, чем mid-request cancellation)
 - При превышении любого лимита цикл прерывается, непроверенные параметры получают статус MANUAL
 
 ---
@@ -66,10 +66,12 @@ check_norms(session, llm, retriever)
 
 - **Вход:** `parameter_name: str`, `status: "PASS" | "FAIL" | "MANUAL"`, `norm_reference: str`, `norm_requirement: str`, `source_chunk_id: str`, `confidence: float`, `explanation: str`
 - **Логика:**
-  1. Проверить `source_chunk_id` в metadata -> если не существует, вернуть `{"error": "invalid chunk_id, use chunk IDs from search_norms results"}`, вердикт не сохраняется
-  2. `confidence < 0.7` -> принудительно `status = MANUAL`, в explanation добавляется `"[low confidence -> MANUAL]"`
-  3. Найти `Parameter` по `parameter_name` -> собрать `CheckResult` -> сохранить
-  4. Вернуть `{"status": "ok", "parameter": <name>, "verdict": <status>}`
+  1. Проверить наличие всех 7 required-полей -> если отсутствуют, вернуть `{"error": "missing required fields: <list>"}`, вердикт не сохраняется
+  2. Проверить `source_chunk_id` в metadata -> если не существует, вернуть `{"error": "source_chunk_id '...' not found"}`, вердикт не сохраняется
+  3. Проверить валидность `status` (PASS/FAIL/MANUAL) и приводимость `confidence` к числу -> ошибка при невалидных значениях
+  4. `confidence < 0.7` -> принудительно `status = MANUAL`, в explanation добавляется `"[low confidence -> MANUAL]"`
+  5. Найти `Parameter` по `parameter_name` -> собрать `CheckResult` -> сохранить
+  6. Вернуть `{"status": "ok", "parameter": <name>, "verdict": <status>}`
 
 ---
 

@@ -1,7 +1,8 @@
 import json
 from unittest.mock import MagicMock
 
-from backend.app.checker import _match_parameter, check_norms
+from backend.app.checker import _handle_submit_verdict, _match_parameter, check_norms
+from backend.app.config import Settings
 from backend.app.schemas import Parameter, SessionState
 from backend.app.tools import compare_values
 
@@ -384,6 +385,70 @@ class TestCheckNorms:
 
 
 # ---------------------------------------------------------------------------
+# TestSubmitVerdictValidation
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitVerdictValidation:
+    """Direct-unit tests for _handle_submit_verdict input validation."""
+
+    def _valid_args(self):
+        return {
+            "parameter_name": "Напряжение сети",
+            "status": "PASS",
+            "norm_reference": "ПУЭ 7.1.34",
+            "norm_requirement": "380В",
+            "source_chunk_id": "pue_7_1_34_001",
+            "confidence": 0.9,
+            "explanation": "Соответствует",
+        }
+
+    def test_missing_single_required_field_returns_error(self):
+        args = self._valid_args()
+        del args["norm_reference"]
+        param = _make_parameter(name="Напряжение сети")
+        retriever = _make_retriever()
+        tool_result, cr = _handle_submit_verdict(args, [param], set(), retriever, Settings())
+        assert cr is None
+        payload = json.loads(tool_result)
+        assert "error" in payload
+        assert "missing required fields" in payload["error"]
+        assert "norm_reference" in payload["error"]
+
+    def test_missing_multiple_required_fields_lists_all(self):
+        args = self._valid_args()
+        del args["confidence"]
+        del args["explanation"]
+        param = _make_parameter(name="Напряжение сети")
+        retriever = _make_retriever()
+        tool_result, cr = _handle_submit_verdict(args, [param], set(), retriever, Settings())
+        assert cr is None
+        payload = json.loads(tool_result)
+        assert "confidence" in payload["error"]
+        assert "explanation" in payload["error"]
+
+    def test_invalid_status_returns_error(self):
+        args = self._valid_args()
+        args["status"] = "UNKNOWN"
+        param = _make_parameter(name="Напряжение сети")
+        retriever = _make_retriever()
+        tool_result, cr = _handle_submit_verdict(args, [param], set(), retriever, Settings())
+        assert cr is None
+        payload = json.loads(tool_result)
+        assert "invalid status" in payload["error"]
+
+    def test_non_numeric_confidence_returns_error(self):
+        args = self._valid_args()
+        args["confidence"] = "high"
+        param = _make_parameter(name="Напряжение сети")
+        retriever = _make_retriever()
+        tool_result, cr = _handle_submit_verdict(args, [param], set(), retriever, Settings())
+        assert cr is None
+        payload = json.loads(tool_result)
+        assert "invalid confidence" in payload["error"]
+
+
+# ---------------------------------------------------------------------------
 # TestToolDispatch
 # ---------------------------------------------------------------------------
 
@@ -428,6 +493,54 @@ class TestToolDispatch:
         )
         assert len(results) == 1
         assert results[0].status == "PASS"
+
+    def test_parallel_tool_calls_in_single_response(self):
+        """Agent returns two tool_calls in one response -> both executed in order."""
+        param = _make_parameter(name="Напряжение сети")
+        session = _make_session(parameters=[param])
+        retriever = _make_retriever()
+
+        verdict_args = {
+            "parameter_name": "Напряжение сети",
+            "status": "PASS",
+            "norm_reference": "ПУЭ 7.1.34",
+            "norm_requirement": "380В",
+            "source_chunk_id": "pue_7_1_34_001",
+            "confidence": 0.9,
+            "explanation": "Соответствует",
+        }
+
+        # First response: TWO tool_calls in parallel (search + get_norm_chunk)
+        resp_parallel = _mock_response_with_tools(
+            [
+                ("search_norms", {"query": "напряжение 380"}),
+                ("get_norm_chunk", {"chunk_id": "pue_7_1_34_001"}),
+            ]
+        )
+        resp_verdict = _mock_response_with_tools([("submit_verdict", verdict_args)])
+        resp_stop = _mock_response_no_tools()
+
+        llm = MagicMock()
+        llm.chat.side_effect = [resp_parallel, resp_verdict, resp_stop]
+        llm.get_tool_calls.side_effect = [
+            resp_parallel.choices[0].message.tool_calls,
+            resp_verdict.choices[0].message.tool_calls,
+            [],
+        ]
+        llm.usage = MagicMock(cost_usd=0.02, total_tokens=500)
+
+        results = check_norms(session, llm, retriever)
+
+        # Both tools from parallel response should have been dispatched
+        retriever.search_norms.assert_called_once_with("напряжение 380", top_k=5, filter_doc=None)
+        # get_norm_chunk called twice: once as agent tool call, once verifying verdict
+        assert retriever.get_norm_chunk.call_count == 2
+        assert results[0].status == "PASS"
+
+        # Count messages: system + user + (assistant + 2 tool) + (assistant + 1 tool)
+        # We can't access messages directly, but we can verify agent ran 2 steps
+        # (parallel batch counts as 1 step; verdict counts as 1 step)
+        assert session.agent_steps == 2
 
     def test_get_norm_chunk_dispatches_to_retriever(self):
         """Agent calls get_norm_chunk -> retriever.get_norm_chunk is invoked."""
