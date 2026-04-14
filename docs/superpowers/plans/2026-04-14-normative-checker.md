@@ -826,7 +826,7 @@ def _handle_submit_verdict(
         explanation=explanation,
     )
 
-    return json.dumps({"accepted": True}, ensure_ascii=False), check_result
+    return json.dumps({"status": "ok", "parameter": param.name, "verdict": status}, ensure_ascii=False), check_result
 
 
 def _execute_tool(

@@ -69,7 +69,7 @@ check_norms(session, llm, retriever)
   1. Проверить `source_chunk_id` в metadata -> если не существует, вернуть `{"error": "invalid chunk_id, use chunk IDs from search_norms results"}`, вердикт не сохраняется
   2. `confidence < 0.7` -> принудительно `status = MANUAL`, в explanation добавляется `"[low confidence -> MANUAL]"`
   3. Найти `Parameter` по `parameter_name` -> собрать `CheckResult` -> сохранить
-  4. Вернуть `{"accepted": true}`
+  4. Вернуть `{"status": "ok", "parameter": <name>, "verdict": <status>}`
 
 ---
 
