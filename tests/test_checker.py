@@ -381,3 +381,86 @@ class TestCheckNorms:
         # PASS result should be for p1
         pass_result = next(r for r in results if r.status == "PASS")
         assert pass_result.parameter.name == "Напряжение сети"
+
+
+# ---------------------------------------------------------------------------
+# TestToolDispatch
+# ---------------------------------------------------------------------------
+
+
+class TestToolDispatch:
+    def test_search_norms_dispatches_to_retriever(self):
+        """Agent calls search_norms -> retriever.search_norms is invoked with correct args."""
+        param = _make_parameter()
+        session = _make_session(parameters=[param])
+        retriever = _make_retriever()
+
+        search_args = {"query": "напряжение электроснабжение", "top_k": 5}
+        verdict_args = {
+            "parameter_name": "Напряжение сети",
+            "status": "PASS",
+            "norm_reference": "ПУЭ 7.1.34",
+            "norm_requirement": "380В",
+            "source_chunk_id": "pue_7_1_34_001",
+            "confidence": 0.9,
+            "explanation": "Соответствует",
+        }
+
+        resp1 = _mock_response_with_tools([("search_norms", search_args)])
+        resp2 = _mock_response_with_tools([("submit_verdict", verdict_args)])
+        resp3 = _mock_response_no_tools()
+
+        llm = MagicMock()
+        llm.chat.side_effect = [resp1, resp2, resp3]
+        llm.get_tool_calls.side_effect = [
+            resp1.choices[0].message.tool_calls,
+            resp2.choices[0].message.tool_calls,
+            [],
+        ]
+        llm.usage = MagicMock(cost_usd=0.02, total_tokens=500)
+
+        results = check_norms(session, llm, retriever)
+
+        retriever.search_norms.assert_called_once_with(
+            "напряжение электроснабжение",
+            top_k=5,
+            filter_doc=None,
+        )
+        assert len(results) == 1
+        assert results[0].status == "PASS"
+
+    def test_get_norm_chunk_dispatches_to_retriever(self):
+        """Agent calls get_norm_chunk -> retriever.get_norm_chunk is invoked."""
+        param = _make_parameter()
+        session = _make_session(parameters=[param])
+        retriever = _make_retriever()
+
+        chunk_args = {"chunk_id": "pue_7_1_34_001"}
+        verdict_args = {
+            "parameter_name": "Напряжение сети",
+            "status": "PASS",
+            "norm_reference": "ПУЭ 7.1.34",
+            "norm_requirement": "380В",
+            "source_chunk_id": "pue_7_1_34_001",
+            "confidence": 0.9,
+            "explanation": "Соответствует",
+        }
+
+        resp1 = _mock_response_with_tools([("get_norm_chunk", chunk_args)])
+        resp2 = _mock_response_with_tools([("submit_verdict", verdict_args)])
+        resp3 = _mock_response_no_tools()
+
+        llm = MagicMock()
+        llm.chat.side_effect = [resp1, resp2, resp3]
+        llm.get_tool_calls.side_effect = [
+            resp1.choices[0].message.tool_calls,
+            resp2.choices[0].message.tool_calls,
+            [],
+        ]
+        llm.usage = MagicMock(cost_usd=0.02, total_tokens=500)
+
+        results = check_norms(session, llm, retriever)
+
+        # get_norm_chunk called: once for the tool call, once for verdict validation
+        assert retriever.get_norm_chunk.call_count == 2
+        assert results[0].status == "PASS"
