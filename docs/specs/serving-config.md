@@ -5,12 +5,19 @@
 ### Локальная разработка
 
 ```bash
-# Backend (Python)
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+# Backend (Python) — uv управляет Python-версией, venv и зависимостями
+uv sync                                    # создаёт .venv + ставит всё из uv.lock
+uv run uvicorn backend.app.main:app --reload --port 8000
+
+# Линтинг и форматирование
+uv run ruff check .                        # lint
+uv run ruff format .                       # format
+
+# Тесты
+uv run pytest
+
+# Скрипты
+uv run python backend/scripts/index_norms.py
 
 # Frontend (Node.js)
 cd frontend
@@ -99,6 +106,9 @@ LOG_DIR=logs
 
 ```
 spec-control-ai/
+├── pyproject.toml               # PEP 621, зависимости, конфигурация ruff
+├── uv.lock                      # Lock-файл (коммитится в git)
+├── .python-version              # Закреплённая версия Python (uv python pin)
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI app
@@ -117,11 +127,11 @@ spec-control-ai/
 │   │   └── logging_config.py    # Logging setup
 │   ├── scripts/
 │   │   └── index_norms.py       # Offline indexation script
-│   ├── data/
-│   │   ├── norms/               # Source normative PDFs
-│   │   └── faiss/               # Generated FAISS index + metadata
-│   ├── requirements.txt
 │   └── Dockerfile
+├── data/
+│   ├── norms/                   # Source normative PDFs
+│   ├── faiss/                   # Generated FAISS index + metadata
+│   └── samples/                 # Eval dataset
 ├── frontend/
 │   ├── ...                      # Node.js app
 │   └── Dockerfile

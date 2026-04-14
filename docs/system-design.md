@@ -21,6 +21,7 @@
 | Vector store | FAISS + JSON metadata | Простота, скорость, достаточно для 3-5 нормативных документов PoC-масштаба |
 | Embedding | multilingual-e5-large (локально, CPU) | Нет зависимости от второго API-провайдера. CPU достаточно для PoC |
 | Backend | Python + FastAPI | Все ключевые библиотеки (PyMuPDF, FAISS, sentence-transformers) нативно на Python |
+| Tooling | uv (package manager) + ruff (linter/formatter) | Быстрая установка зависимостей, единый lock-файл, линтинг и форматирование в одном инструменте |
 | Frontend | Node.js | Гибкость построения UI |
 | Observability | LangFuse self-hosted (Docker) | LLM tracing, cost tracking без лимитов. Данные остаются локально |
 | System logging | Python logging → JSON Lines | Системные события и ошибки (без PII) |
